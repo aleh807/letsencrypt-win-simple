@@ -8,16 +8,16 @@ namespace LetsEncrypt.ACME.Simple
     public class Target
     {
         public const short DefaultHttpsPort = 443;
-        public static Dictionary<string, Plugin> Plugins = new Dictionary<string, Plugin>();
+        public static readonly IReadOnlyDictionary<string, Plugin> Plugins;
 
         static Target()
         {
-            foreach (
-                var pluginType in
-                    (from t in Assembly.GetExecutingAssembly().GetTypes() where t.BaseType == typeof (Plugin) select t))
-            {
-                AddPlugin(pluginType);
-            }
+            Plugins = Assembly.GetExecutingAssembly()
+                              .GetTypes()
+                              .Where(type => type.BaseType == typeof(Plugin))
+                              .Select(type => type.GetConstructor(Type.EmptyTypes).Invoke(null))
+                              .Cast<Plugin>()
+                              .ToDictionary(plugin => plugin.Name);
         }
 
         public Target()
@@ -25,14 +25,8 @@ namespace LetsEncrypt.ACME.Simple
             HttpsPort = DefaultHttpsPort;
         }
 
-        static void AddPlugin(Type type)
-        {
-            var plugin = type.GetConstructor(new Type[] {}).Invoke(null) as Plugin;
-            Plugins.Add(plugin.Name, plugin);
-        }
-
-        public string Host { get; set; }
         public int HttpsPort { get; set; }
+        public string Host { get; set; }
         public string WebRootPath { get; set; }
         public long SiteId { get; set; }
         public List<string> AlternativeNames { get; set; }
