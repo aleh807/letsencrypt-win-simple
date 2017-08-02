@@ -61,12 +61,13 @@ namespace LetsEncrypt.ACME.Simple
                             if (!String.IsNullOrEmpty(binding.Host) && binding.Protocol == "https" &&
                                 !Regex.IsMatch(binding.Host, @"[^\u0000-\u007F]"))
                             {
-                                if (siteHTTPS.Where(h => h.Host == binding.Host).Count() == 0)
+                                if (siteHTTPS.Where(h => h.Host == binding.Host && h.HttpsPort == binding.EndPoint.Port).Count() == 0)
                                 {
                                     siteHTTPS.Add(new Target()
                                     {
                                         SiteId = site.Id,
                                         Host = binding.Host,
+                                        HttpsPort = binding.EndPoint.Port,
                                         WebRootPath = site.Applications["/"].VirtualDirectories["/"].PhysicalPath,
                                         PluginName = Name
                                     });
@@ -92,7 +93,11 @@ namespace LetsEncrypt.ACME.Simple
                         }
                         else
                         {
-                            result.AddRange(returnHTTP);
+                            var uniqHttpsHosts = siteHTTPS.Select(s => s.Host).Distinct().ToArray();
+                            var httpWithoutHttps = siteHTTP.Where(s => !uniqHttpsHosts.Contains(s.Host)).ToArray();
+
+                            result.AddRange(httpWithoutHttps);
+                            result.AddRange(siteHTTPS);
                         }
                     }
                 }
@@ -206,7 +211,7 @@ namespace LetsEncrypt.ACME.Simple
                 foreach (var host in hosts)
                 {
                     var existingBinding =
-                        (from b in site.Bindings where b.Host == host && b.Protocol == "https" select b).FirstOrDefault();
+                        (from b in site.Bindings where b.Host == host && b.Protocol == "https" && b.EndPoint.Port == target.HttpsPort select b).FirstOrDefault();
                     if (existingBinding != null)
                     {
                         Log.Information("Updating Existing https Binding");
@@ -228,7 +233,7 @@ namespace LetsEncrypt.ACME.Simple
                         {
                             string IP = GetIP(existingHTTPBinding.EndPoint.ToString(), host);
 
-                            var iisBinding = site.Bindings.Add(IP + ":443:" + host, certificate.GetCertHash(),
+                            var iisBinding = site.Bindings.Add($"{IP}:{target.HttpsPort}:{host}", certificate.GetCertHash(),
                                 store.Name);
                             iisBinding.Protocol = "https";
 
@@ -304,7 +309,7 @@ namespace LetsEncrypt.ACME.Simple
                             {
                                 string IP = GetIP(existingHTTPBinding.EndPoint.ToString(), host);
 
-                                var iisBinding = site.Bindings.Add(IP + ":443:" + host, "https");
+                                var iisBinding = site.Bindings.Add($"{IP}:{target.HttpsPort}:{host}", "https");
 
                                 iisBinding.SetAttributeValue("sslFlags", 3);
                                 // Enable Centralized Certificate Store with SNI
